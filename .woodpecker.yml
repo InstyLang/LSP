@@ -36,3 +36,25 @@ steps:
     commands:
       - gh release create "$CI_COMMIT_TAG" --repo "$CI_REPO" --title "$CI_COMMIT_TAG" --generate-notes || true
       - gh release upload "$CI_COMMIT_TAG" --repo "$CI_REPO" --clobber build/insty-lsp
+
+  # Windows cross-compile (reuses the sibling Compiler clone from fetch-compiler).
+  - name: build-windows
+    image: insty-ci-win:llvm22
+    commands:
+      - cmake -S . -B build-win -G Ninja
+        -DCMAKE_TOOLCHAIN_FILE=/opt/win-toolchain.cmake
+        -DINSTY_COMPILER_DIR=../Compiler
+        -DCMAKE_BUILD_TYPE=Release
+      - ninja -C build-win
+      - test -f build-win/insty-lsp.exe
+
+  - name: release-windows
+    image: insty-ci-win:llvm22
+    when:
+      - event: tag
+    environment:
+      GH_TOKEN:
+        from_secret: github_token
+    commands:
+      - cp build-win/insty-lsp.exe build-win/insty-lsp-windows-x86_64.exe
+      - gh release upload "$CI_COMMIT_TAG" --repo "$CI_REPO" --clobber build-win/insty-lsp-windows-x86_64.exe
