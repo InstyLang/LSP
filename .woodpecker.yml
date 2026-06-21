@@ -1,0 +1,27 @@
+# Woodpecker CI pipeline for the Insty LSP language server.
+# The LSP reuses the Compiler frontend sources, so we clone the Compiler repo
+# as a sibling and point INSTY_COMPILER_DIR at it.
+
+steps:
+  - name: fetch-compiler
+    image: insty-ci:llvm22
+    commands:
+      - git clone --depth 1 https://github.com/InstyLang/Compiler.git ../Compiler
+
+  - name: configure
+    image: insty-ci:llvm22
+    commands:
+      - cmake -S . -B build -G Ninja
+        -DINSTY_COMPILER_DIR=../Compiler
+        -DCMAKE_C_COMPILER=clang
+        -DCMAKE_CXX_COMPILER=clang++
+
+  - name: build
+    image: insty-ci:llvm22
+    commands:
+      - ninja -C build
+
+  - name: test
+    image: insty-ci:llvm22
+    commands:
+      - 'if [ -f build/CTestTestfile.cmake ]; then ctest --test-dir build --output-on-failure; else echo "no ctest targets defined; skipping"; fi'
