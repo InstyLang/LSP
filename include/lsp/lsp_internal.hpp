@@ -53,5 +53,6 @@ void addUniqueCompletion(std::vector<CompletionItem>& items, std::set<std::strin
 Location locationFromSymbol(const DocumentState& doc, const Symbol& symbol);
 bool looksLikeFunction(const Symbol& symbol);
 int completionKindForSymbol(const Symbol& symbol);
+std::filesystem::path resolveExecutableDir();
 
 } // namespace LSP::detail

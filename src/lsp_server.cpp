@@ -12,9 +12,36 @@
 #include <set>
 #include <sstream>
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace LSP::detail {
+
+// Resolve the directory containing the running executable so the server can
+// locate sibling resources. Uses the platform-native mechanism and falls back
+// to the current working directory when that is unavailable.
+std::filesystem::path resolveExecutableDir() {
+#if defined(_WIN32)
+    wchar_t buffer[MAX_PATH];
+    const DWORD len = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
+        return std::filesystem::path(buffer).parent_path();
+    }
+    return std::filesystem::current_path();
+#elif defined(__linux__)
+    std::error_code ec;
+    auto path = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if (!ec) {
+        return path.parent_path();
+    }
+    return std::filesystem::current_path();
+#else
+    return std::filesystem::current_path();
+#endif
+}
 
 bool isIdentifierChar(char ch) {
     return std::isalnum(static_cast<unsigned char>(ch)) || ch == '_';
@@ -330,12 +357,12 @@ namespace LSP {
 
 Server::Server(std::unique_ptr<Transport> transport)
     : running(false), transport(std::move(transport)) {
+#ifdef SIGPIPE
+    // SIGPIPE does not exist on Windows; only ignore it where defined so a
+    // broken client connection does not terminate the server.
     signal(SIGPIPE, SIG_IGN);
-    std::error_code ec;
-    executableDir = fs::read_symlink("/proc/self/exe", ec).parent_path();
-    if (ec) {
-        executableDir = fs::current_path();
-    }
+#endif
+    executableDir = detail::resolveExecutableDir();
 }
 
 void Server::start() {

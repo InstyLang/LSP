@@ -1,10 +1,13 @@
 #include <lsp/lsp_server.hpp>
 
 #include <iostream>
-#include <netinet/in.h>
 #include <stdexcept>
+
+#if !defined(_WIN32)
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 namespace LSP {
 
@@ -35,6 +38,12 @@ void StdioTransport::write(const std::string& data) {
 
 SocketTransport::SocketTransport(int port)
     : serverSocket(-1), clientSocket(-1), port(port) {
+#if defined(_WIN32)
+    // TCP transport is not supported on Windows; editors use the stdio
+    // transport. Fail loudly if a socket transport is requested anyway.
+    throw std::runtime_error(
+        "Socket transport is not supported on Windows; use stdio transport");
+#else
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket < 0) {
         throw std::runtime_error("Failed to create socket");
@@ -59,18 +68,24 @@ SocketTransport::SocketTransport(int port)
     }
 
     std::cerr << "LSP server listening on port " << port << std::endl;
+#endif
 }
 
 SocketTransport::~SocketTransport() {
+#if !defined(_WIN32)
     if (clientSocket >= 0) {
         close(clientSocket);
     }
     if (serverSocket >= 0) {
         close(serverSocket);
     }
+#endif
 }
 
 bool SocketTransport::acceptConnection() {
+#if defined(_WIN32)
+    return false;
+#else
     if (clientSocket >= 0) {
         return true;
     }
@@ -83,9 +98,14 @@ bool SocketTransport::acceptConnection() {
     }
     std::cerr << "Client connected" << std::endl;
     return true;
+#endif
 }
 
 bool SocketTransport::readLine(std::string& line) {
+#if defined(_WIN32)
+    (void)line;
+    return false;
+#else
     if (!acceptConnection()) {
         return false;
     }
@@ -101,9 +121,15 @@ bool SocketTransport::readLine(std::string& line) {
         }
     }
     return false;
+#endif
 }
 
 bool SocketTransport::read(char* buffer, size_t size) {
+#if defined(_WIN32)
+    (void)buffer;
+    (void)size;
+    return false;
+#else
     if (!acceptConnection()) {
         return false;
     }
@@ -117,9 +143,14 @@ bool SocketTransport::read(char* buffer, size_t size) {
         totalRead += static_cast<size_t>(n);
     }
     return true;
+#endif
 }
 
 void SocketTransport::write(const std::string& data) {
+#if defined(_WIN32)
+    (void)data;
+    throw std::runtime_error("Socket transport is not supported on Windows");
+#else
     if (!acceptConnection()) {
         throw std::runtime_error("No client connection");
     }
@@ -128,6 +159,7 @@ void SocketTransport::write(const std::string& data) {
     if (written < 0 || static_cast<size_t>(written) != data.size()) {
         throw std::runtime_error("Failed to write to socket");
     }
+#endif
 }
 
 bool SocketTransport::isOpen() const {

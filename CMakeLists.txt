@@ -7,6 +7,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ggdb -O0")
 
+# Produce a self-contained Windows executable when cross-compiling: statically
+# link the C++ runtime so insty-lsp.exe does not need libc++.dll/libunwind.dll.
+if(CMAKE_CROSSCOMPILING AND WIN32)
+    set(CMAKE_EXE_LINKER_FLAGS
+        "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
+endif()
+
 # The LSP server reuses the compiler's frontend (lexer, parser, shared
 # utilities). It builds those sources directly from the Compiler project so
 # there is a single source of truth. Point INSTY_COMPILER_DIR elsewhere if
