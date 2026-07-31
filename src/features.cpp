@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <map>
 #include <set>
 
 namespace LSP {
@@ -257,6 +258,52 @@ std::vector<Diagnostic> Server::collectImportDiagnostics(DocumentState& doc) {
     return diagnostics;
 }
 
+std::vector<Diagnostic> Server::collectUnusedDiagnostics(const DocumentState& doc) {
+    std::vector<Diagnostic> diagnostics;
+    if (!doc.hasValidAST || !doc.ast) {
+        return diagnostics;
+    }
+
+    // Count how many times each symbol is referenced. References only record
+    // identifier *uses* (not the declaration site), so a symbol with zero
+    // references is never read.
+    std::map<int, int> useCount;
+    for (const auto& ref : doc.semanticReferences) {
+        if (ref.symbolId >= 0) {
+            useCount[ref.symbolId]++;
+        }
+    }
+
+    for (const auto& symbol : doc.semanticSymbols) {
+        // Only flag local variables. Parameters and globals/exports are often
+        // unused intentionally (interface stability, ABI, forward decls).
+        if (symbol.isParameter || symbol.isGlobal) {
+            continue;
+        }
+        if (symbol.id < 0 || symbol.name.empty()) {
+            continue;
+        }
+        // Conventional "intentionally unused" marker.
+        if (symbol.name == "_" || symbol.name.rfind('_', 0) == 0) {
+            continue;
+        }
+        if (useCount.count(symbol.id) != 0) {
+            continue;
+        }
+
+        Diagnostic diag;
+        diag.message = "'" + symbol.name + "' is declared but never used";
+        diag.severity = 4; // Hint
+        diag.line = symbol.declaration.line;
+        diag.column = symbol.declaration.column;
+        diag.length = std::max(1, symbol.declaration.length);
+        diag.tags.push_back(1); // DiagnosticTag.Unnecessary -> renders greyed out
+        diagnostics.push_back(diag);
+    }
+
+    return diagnostics;
+}
+
 std::vector<CompletionItem> Server::collectCompletionItems(const DocumentState& doc, int line, int character) {
     std::vector<CompletionItem> items;
     std::set<std::string> seen;
@@ -323,11 +370,14 @@ std::vector<CompletionItem> Server::collectCompletionItems(const DocumentState& 
         return items;
     }
 
+    // Full keyword set (kept in sync with the compiler lexer's keyword table plus
+    // the `in` contextual keyword used in for-in headers).
     const std::vector<std::string> keywords = {
-        "module", "import", "fun", "struct", "enum", "class", "if",
-        "else", "while", "for", "return", "break", "skip", "when",
-        "switch", "loop", "unsafe", "new", "delete", "cast", "true",
-        "false", "const", "let", "this"
+        "module", "import", "as", "fun", "extern", "export", "struct", "class",
+        "enum", "constructor", "destructor", "operator", "const", "let", "if",
+        "else", "while", "for", "in", "loop", "when", "switch", "match", "return",
+        "break", "skip", "new", "delete", "cast", "unsafe", "volatile", "section",
+        "this", "true", "false"
     };
     for (const auto& keyword : keywords) {
         detail::addUniqueCompletion(items, seen, keyword, 14, "keyword", keyword);
@@ -341,9 +391,13 @@ std::vector<CompletionItem> Server::collectCompletionItems(const DocumentState& 
         detail::addUniqueCompletion(items, seen, type, 25, "type", type);
     }
 
+    // Builtins, kept in sync with Builtins::kSpecs (extra/builtins.cpp).
     const std::vector<std::string> builtins = {
-        "@syscall", "@sizeof", "@typeof", "@alignof", "@offsetof",
-        "@readFile", "@bitcast", "@inttoptr", "@ptrtoint"
+        "@syscall", "@strlen", "@sizeof", "@alignof", "@malloc", "@free",
+        "@realloc", "@memset", "@memcpy", "@panic", "@print", "@println",
+        "@readFile", "@system", "@getCurrentOS", "@typeof", "@offsetof",
+        "@bitcast", "@inttoptr", "@ptrtoint", "@utf16", "@hostname",
+        "@processorCount", "@totalMemory"
     };
     for (const auto& builtin : builtins) {
         detail::addUniqueCompletion(items, seen, builtin, 3, "builtin", builtin);

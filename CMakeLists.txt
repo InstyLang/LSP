@@ -70,7 +70,9 @@ add_library(InstyFrontend STATIC
     ${INSTY_FRONTEND_SRC}/parser/statements/vars-fn.cpp
     ${INSTY_FRONTEND_SRC}/parser/statements/when.cpp
     ${INSTY_FRONTEND_SRC}/parser/statements/switch.cpp
+    ${INSTY_FRONTEND_SRC}/parser/statements/match.cpp
     ${INSTY_FRONTEND_SRC}/parser/statements/while.cpp
+    ${INSTY_FRONTEND_SRC}/parser/statements/for.cpp
     ${INSTY_FRONTEND_SRC}/parser/statements/loop.cpp
     ${INSTY_FRONTEND_SRC}/parser/statements/declarations.cpp
     ${INSTY_FRONTEND_SRC}/parser/statements/control_flow.cpp
@@ -81,6 +83,17 @@ add_library(InstyFrontend STATIC
     ${INSTY_FRONTEND_SRC}/utilities/errors.cpp
     ${INSTY_FRONTEND_SRC}/utilities/type_system.cpp
     ${INSTY_FRONTEND_SRC}/utilities/logger.cpp
+    # AST cloning, used by the checker to monomorphize generic functions and
+    # classes (cloneFunctionDeclaration / cloneMethod).
+    ${INSTY_FRONTEND_SRC}/utilities/ast_clone.cpp
+
+    # Semantic analysis (type checking). LLVM-free: enables the LSP to report
+    # type errors, undeclared identifiers, arg-count mismatches, etc.
+    ${INSTY_FRONTEND_SRC}/sema/analyzer.cpp
+    ${INSTY_FRONTEND_SRC}/sema/declarations.cpp
+    ${INSTY_FRONTEND_SRC}/sema/diagnostics.cpp
+    ${INSTY_FRONTEND_SRC}/sema/typecheck.cpp
+    ${INSTY_FRONTEND_SRC}/extra/builtins.cpp
 )
 
 target_include_directories(InstyFrontend PUBLIC
@@ -94,6 +107,7 @@ add_library(InstyLSP STATIC
     src/workspace.cpp
     src/analysis.cpp
     src/features.cpp
+    src/semantic_tokens.cpp
     src/json.cpp
     include/lsp/lsp_server.hpp
     include/lsp/lsp_internal.hpp

@@ -2,10 +2,14 @@
 
 #include <lexer/lexer.hpp>
 #include <parser/parser.hpp>
+#include <sema/sema.hpp>
+#include <extra/type_system.hpp>
 #include <utilities/errors.hpp>
 #include <utilities/utils.hpp>
 
 #include <algorithm>
+#include <functional>
+#include <map>
 #include <set>
 
 namespace fs = std::filesystem;
@@ -157,12 +161,31 @@ private:
                 continue;
             }
 
+            std::string signature = "fun " + fn->name;
+            if (!fn->genericParams.empty()) {
+                signature += "<";
+                for (size_t gi = 0; gi < fn->genericParams.size(); ++gi) {
+                    if (gi > 0) signature += ", ";
+                    signature += fn->genericParams[gi];
+                }
+                signature += ">";
+            }
+            signature += "(";
+            for (size_t pi = 0; pi < fn->parameters.size(); ++pi) {
+                if (pi > 0) signature += ", ";
+                const auto& param = fn->parameters[pi];
+                if (param.isVolatile) signature += "volatile ";
+                signature += param.type;
+                if (!param.name.empty()) signature += " " + param.name;
+            }
+            signature += ") -> " + fn->returnType;
+
             declareSymbol(
                 fn->name,
                 fn->returnType,
                 *declaration,
                 locationOffset(*declaration),
-                "fun " + fn->name + "(...) -> " + fn->returnType,
+                signature,
                 false,
                 scopes_.size() == 1,
                 true);
@@ -325,6 +348,64 @@ private:
                 visitBlock(node.body, true);
                 return;
             }
+            case AST::NodeType::ForLoop: {
+                const auto& node = static_cast<const AST::ForLoop&>(*expr);
+                // The loop variable is scoped to the whole `for` construct.
+                pushScope(false, nodeStartOffset(node), nodeEndOffset(node));
+                const int headerStart = nodeStartOffset(node);
+                const int headerEnd = !node.body.empty()
+                    ? std::max(headerStart, node.body.front()->range.startOffset)
+                    : nodeEndOffset(node);
+                if (auto decl = findIdentifierLocation(node.varName, headerStart, headerEnd)) {
+                    declareSymbol(node.varName, "", *decl, locationOffset(*decl),
+                                  node.varName + " (loop variable)", true, false, false);
+                }
+                if (node.isRange) {
+                    visitExpr(node.rangeStart);
+                    visitExpr(node.rangeEnd);
+                } else {
+                    visitExpr(node.iterable);
+                }
+                visitBlock(node.body, false);
+                popScope();
+                return;
+            }
+            case AST::NodeType::MatchStatement: {
+                const auto& node = static_cast<const AST::MatchStatement&>(*expr);
+                visitExpr(node.subject);
+                // Bindings appear in each arm's pattern before its body. Scan the
+                // token stream forward per arm to locate them (arms carry no range).
+                int cursor = nodeStartOffset(node);
+                for (const auto& arm : node.arms) {
+                    int bodyStart = !arm.body.empty()
+                        ? std::max(cursor, arm.body.front()->range.startOffset)
+                        : nodeEndOffset(node);
+                    int bodyEnd = !arm.body.empty() && arm.body.back()->range.endOffset >= 0
+                        ? arm.body.back()->range.endOffset
+                        : nodeEndOffset(node);
+                    pushScope(false, cursor, bodyEnd);
+                    for (const auto& binding : arm.bindings) {
+                        size_t foundIndex = 0;
+                        auto decl = findIdentifierLocation(binding, cursor, bodyStart,
+                                                           0, &foundIndex);
+                        if (decl) {
+                            declareSymbol(binding, "", *decl, locationOffset(*decl),
+                                          binding + " (match binding)", true, false, false);
+                        }
+                    }
+                    visitBlock(arm.body, false);
+                    popScope();
+                    cursor = std::max(cursor, bodyEnd);
+                }
+                return;
+            }
+            case AST::NodeType::SliceExpr: {
+                const auto& node = static_cast<const AST::SliceExpr&>(*expr);
+                visitExpr(node.object);
+                visitExpr(node.start);
+                visitExpr(node.end);
+                return;
+            }
             case AST::NodeType::IfStatement: {
                 const auto& node = static_cast<const AST::IfStatement&>(*expr);
                 visitExpr(node.condition);
@@ -480,8 +561,12 @@ void Server::validateDocument(const std::string& uri) {
     indexDocument(doc);
 
     std::vector<Diagnostic> diagnostics = parsed.diagnostics;
+    auto semanticDiagnostics = collectSemanticDiagnostics(doc);
+    diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
     auto importDiagnostics = collectImportDiagnostics(doc);
     diagnostics.insert(diagnostics.end(), importDiagnostics.begin(), importDiagnostics.end());
+    auto unusedDiagnostics = collectUnusedDiagnostics(doc);
+    diagnostics.insert(diagnostics.end(), unusedDiagnostics.begin(), unusedDiagnostics.end());
 
     std::set<std::string> seen;
     std::vector<Diagnostic> deduped;
@@ -516,6 +601,119 @@ void Server::reindexDocument(const std::string& uri, const std::string& text, bo
 
     documents[uri] = std::move(doc);
     indexDocument(documents[uri]);
+}
+
+namespace {
+
+// The exported symbols of a module, with types interned in a shared TypeContext.
+struct ModuleExports {
+    std::vector<Sema::FunctionInfo> functions;
+    std::vector<Sema::StructInfo> structs;
+    std::vector<Sema::ClassInfo> classes;
+    std::vector<Sema::EnumInfo> enums;
+    std::vector<AST::ClassDeclaration*> classTemplates;
+    std::vector<AST::FunctionDeclaration*> functionTemplates;
+    std::vector<Sema::SumTypeInfo> sumTypes;
+};
+
+// Accumulate `src`'s exported symbols into `dst`.
+void appendExports(ModuleExports& dst, const Sema::SemaResult& src) {
+    for (const auto& fn : src.functions) if (fn.isExported) dst.functions.push_back(fn);
+    for (const auto& s : src.structs) if (s.isExported) dst.structs.push_back(s);
+    for (const auto& c : src.classes) if (c.isExported) dst.classes.push_back(c);
+    for (const auto& e : src.enums) if (e.isExported) dst.enums.push_back(e);
+    for (auto* t : src.genericClassTemplates) if (t && t->isExported) dst.classTemplates.push_back(t);
+    for (auto* t : src.genericFunctionTemplates) if (t && t->isExported) dst.functionTemplates.push_back(t);
+    for (const auto& st : src.sumTypes) if (st.isExported) dst.sumTypes.push_back(st);
+}
+
+} // namespace
+
+std::vector<Diagnostic> Server::collectSemanticDiagnostics(DocumentState& doc) {
+    std::vector<Diagnostic> diagnostics;
+    if (!doc.hasValidAST || !doc.ast) {
+        return diagnostics;
+    }
+
+    // A single TypeContext is shared across the transitive imported-module
+    // analyses and the current document's analysis so their TypeRefs are
+    // compatible (matching how the compiler driver analyzes a multi-module build).
+    Types::TypeContext types;
+
+    // Build the transitive import closure in dependency order (post-order DFS,
+    // deduped by module URI, cycle-safe). Dependencies precede the modules that
+    // import them, matching the driver's compile order.
+    std::vector<DocumentState*> order;
+    std::set<std::string> visited;
+    std::function<void(DocumentState&)> visit = [&](DocumentState& mod) {
+        if (!mod.ast) return;
+        if (!visited.insert(mod.uri).second) return;  // already queued / cycle
+        for (const auto& stmt : mod.ast->body) {
+            auto importStmt = AST::ast_cast<AST::ImportStatement>(stmt);
+            if (!importStmt) continue;
+            auto loaded = ensureModuleLoaded(importStmt->moduleName, &mod);
+            if (loaded && loaded->get().ast) visit(loaded->get());
+        }
+        order.push_back(&mod);  // deps first
+    };
+    for (const auto& stmt : doc.ast->body) {
+        auto importStmt = AST::ast_cast<AST::ImportStatement>(stmt);
+        if (!importStmt) continue;
+        auto loaded = ensureModuleLoaded(importStmt->moduleName, &doc);
+        if (loaded && loaded->get().ast) visit(loaded->get());
+    }
+
+    // Accumulate exported symbols in dependency order, analyzing each module with
+    // everything accumulated so far. The driver accumulates all exported symbols
+    // across the whole build into one flat list handed to each subsequent module,
+    // so a generic template body instantiated at an importer resolves symbols from
+    // modules the importer did not directly import (e.g. StringMap<i64>'s body
+    // calls std::str.hash even though the importer only imported std::map). Each
+    // module is folded exactly once, so no symbol is duplicated.
+    ModuleExports acc;
+    for (DocumentState* mod : order) {
+        Sema::SemaResult result;
+        ErrorReporting::initErrorReporter(mod->text, mod->filePath.empty() ? mod->uri : mod->filePath);
+        try {
+            Sema::Analyzer analyzer(types, ErrorReporting::globalErrorReporter.get());
+            result = analyzer.analyze(mod->ast, acc.functions, acc.structs, acc.classes,
+                                      acc.enums, acc.classTemplates, acc.functionTemplates,
+                                      acc.sumTypes);
+        } catch (...) {
+        }
+        ErrorReporting::cleanupErrorReporter();
+        appendExports(acc, result);
+    }
+
+    // Analyze the current document with the full accumulation, and harvest only
+    // its own diagnostics.
+    ErrorReporting::initErrorReporter(doc.text, doc.filePath.empty() ? doc.uri : doc.filePath);
+    try {
+        Sema::Analyzer analyzer(types, ErrorReporting::globalErrorReporter.get());
+        analyzer.analyze(doc.ast, acc.functions, acc.structs, acc.classes,
+                         acc.enums, acc.classTemplates, acc.functionTemplates,
+                         acc.sumTypes);
+    } catch (...) {
+    }
+
+    if (ErrorReporting::globalErrorReporter) {
+        for (const auto& diag : ErrorReporting::globalErrorReporter->getDiagnostics()) {
+            Diagnostic converted;
+            converted.message = diag.message;
+            if (!diag.hint.empty()) {
+                converted.message += " (" + diag.hint + ")";
+            }
+            converted.severity = diag.level == ErrorReporting::ErrorLevel::Error ? 1 :
+                                 diag.level == ErrorReporting::ErrorLevel::Warning ? 2 : 3;
+            converted.line = std::max(0, diag.location.line - 1);
+            converted.column = std::max(0, diag.location.column - 1);
+            converted.length = std::max(1, diag.location.length);
+            diagnostics.push_back(converted);
+        }
+    }
+    ErrorReporting::cleanupErrorReporter();
+
+    return diagnostics;
 }
 
 void Server::buildSemanticIndex(DocumentState& doc) {

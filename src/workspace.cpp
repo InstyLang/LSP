@@ -1,5 +1,6 @@
 #include <lsp/lsp_internal.hpp>
 
+#include <cstdlib>
 #include <set>
 #include <system_error>
 
@@ -268,8 +269,28 @@ std::vector<fs::path> Server::getModuleSearchDirectories(const DocumentState* co
     addDir(fs::current_path() / "std");
     addDir(fs::current_path() / "build" / "libs");
     addDir(fs::current_path() / "build" / "libs" / "std");
+
+    // The standard library ships next to the compiler as `<insty dir>/libs`. In a
+    // deployed install `insty-lsp` sits beside it (executableDir/libs). In the dev
+    // tree the LSP builds at `LSP/build`, so also look at the sibling Compiler's
+    // source and build stdlib. An explicit INSTY_STDLIB overrides all of these.
+    if (const char* env = std::getenv("INSTY_STDLIB"); env && *env) {
+        addDir(fs::path(env));
+        addDir(fs::path(env) / "std");
+    }
     addDir(executableDir / "libs");
     addDir(executableDir / "libs" / "std");
+    for (const auto& rel : {
+             fs::path("..") / "Compiler" / "libs",
+             fs::path("..") / "Compiler" / "build" / "libs",
+             fs::path("..") / ".." / "Compiler" / "libs",
+             fs::path("..") / ".." / "Compiler" / "build" / "libs"}) {
+        addDir(executableDir / rel);
+    }
+    for (const auto& root : workspaceRoots) {
+        addDir(root / "Compiler" / "libs");
+        addDir(root / "Compiler" / "build" / "libs");
+    }
 
     return dirs;
 }

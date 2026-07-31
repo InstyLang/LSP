@@ -22,6 +22,7 @@ struct Diagnostic {
     int line;
     int column;
     int length = 1;
+    std::vector<int> tags; // LSP DiagnosticTag: 1=Unnecessary, 2=Deprecated
 };
 
 struct CompletionItem {
@@ -143,6 +144,7 @@ private:
     void handleReferences(const JSONValue& id, const JSONValue& params);
     void handlePrepareRename(const JSONValue& id, const JSONValue& params);
     void handleRename(const JSONValue& id, const JSONValue& params);
+    void handleSemanticTokensFull(const JSONValue& id, const JSONValue& params);
     void handleShutdown(const JSONValue& id);
 
     void validateDocument(const std::string& uri);
@@ -164,6 +166,8 @@ private:
     void loadWorkspaceDocuments();
     std::vector<std::string> collectAvailableModules(const DocumentState* contextDoc);
     std::vector<Diagnostic> collectImportDiagnostics(DocumentState& doc);
+    std::vector<Diagnostic> collectSemanticDiagnostics(DocumentState& doc);
+    std::vector<Diagnostic> collectUnusedDiagnostics(const DocumentState& doc);
     std::vector<CompletionItem> collectCompletionItems(const DocumentState& doc, int line, int character);
     std::vector<Location> collectReferences(const DocumentState& doc, int line, int character, bool includeDeclaration);
     std::optional<Location> prepareRenameLocation(const DocumentState& doc, int line, int character);
@@ -184,6 +188,7 @@ private:
     void sendLocationResponse(const JSONValue& id, const Location& location);
     void sendWorkspaceEditResponse(const JSONValue& id, const std::vector<TextEdit>& edits);
     void sendHoverResponse(const JSONValue& id, const Symbol& symbol);
+    void sendSemanticTokensResponse(const JSONValue& id, const std::vector<int>& data);
     void sendNullResponse(const JSONValue& id);
 };
 

@@ -55,4 +55,13 @@ bool looksLikeFunction(const Symbol& symbol);
 int completionKindForSymbol(const Symbol& symbol);
 std::filesystem::path resolveExecutableDir();
 
+// Semantic tokens (parser-accurate highlighting). The legend order defines the
+// integer indices used by the encoding, so the capability advertised at
+// initialize and the encoder must share these vectors.
+const std::vector<std::string>& semanticTokenTypes();
+const std::vector<std::string>& semanticTokenModifiers();
+// Encodes the document as the LSP delta-encoded `data` array
+// (deltaLine, deltaStartChar, length, tokenType, tokenModifiers) x N.
+std::vector<int> computeSemanticTokens(const DocumentState& doc);
+
 } // namespace LSP::detail

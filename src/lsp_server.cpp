@@ -1,6 +1,8 @@
 #include <lsp/lsp_internal.hpp>
 
 #include <parser/parser.hpp>
+#include <sema/sema.hpp>
+#include <extra/type_system.hpp>
 #include <utilities/errors.hpp>
 
 #include <algorithm>
@@ -13,6 +15,15 @@
 #include <sstream>
 
 #if defined(_WIN32)
+// Prevent <windows.h> from defining the `min`/`max` function-style macros, which
+// otherwise clash with std::min/std::max used below. WIN32_LEAN_AND_MEAN trims
+// the include for a faster build.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #endif
 
@@ -277,6 +288,12 @@ ParsedDocument parseDocumentState(const std::string& text, const std::string& fi
             parsed.moduleName = ast->moduleName;
             parsed.imports = ast->imports;
             parsed.hasValidAST = true;
+
+            // NOTE: semantic analysis is intentionally NOT run here. It is run by
+            // the Server (computeSemanticDiagnostics) with the current document's
+            // imported symbols supplied, so that references to imported functions
+            // / types are resolved rather than reported as "unknown". Running it
+            // here (without imports) would produce false diagnostics.
         }
     } catch (const std::exception& e) {
         Diagnostic diag;
@@ -423,6 +440,8 @@ void Server::handleMessage(const std::string& message) {
             handlePrepareRename(id, params);
         } else if (method == "textDocument/rename") {
             handleRename(id, params);
+        } else if (method == "textDocument/semanticTokens/full") {
+            handleSemanticTokensFull(id, params);
         } else if (method == "shutdown") {
             handleShutdown(id);
         } else if (method == "exit") {
@@ -480,6 +499,19 @@ void Server::handleInitialize(const JSONValue& id, const JSONValue& params) {
     JSONValue::Object renameProvider;
     renameProvider["prepareProvider"] = true;
     capabilities["renameProvider"] = renameProvider;
+
+    // Semantic tokens: parser-accurate highlighting for the whole document.
+    JSONValue::Object semanticTokensProvider;
+    JSONValue::Object legend;
+    JSONValue::Array tokenTypes;
+    for (const auto& t : detail::semanticTokenTypes()) tokenTypes.push_back(t);
+    JSONValue::Array tokenModifiers;
+    for (const auto& m : detail::semanticTokenModifiers()) tokenModifiers.push_back(m);
+    legend["tokenTypes"] = tokenTypes;
+    legend["tokenModifiers"] = tokenModifiers;
+    semanticTokensProvider["legend"] = legend;
+    semanticTokensProvider["full"] = true;
+    capabilities["semanticTokensProvider"] = semanticTokensProvider;
 
     JSONValue::Object serverInfo;
     serverInfo["name"] = "insty-lsp";
@@ -551,6 +583,13 @@ void Server::sendDiagnostics(const std::string& uri, const std::vector<Diagnosti
         diag["range"] = range;
         diag["severity"] = d.severity;
         diag["message"] = d.message;
+        if (!d.tags.empty()) {
+            JSONValue::Array tags;
+            for (int tag : d.tags) {
+                tags.push_back(tag);
+            }
+            diag["tags"] = tags;
+        }
         diags.push_back(diag);
     }
 
@@ -712,6 +751,23 @@ void Server::sendHoverResponse(const JSONValue& id, const Symbol& symbol) {
 
     JSONValue::Object result;
     result["contents"] = contents;
+
+    JSONValue::Object response;
+    response["jsonrpc"] = "2.0";
+    response["id"] = id;
+    response["result"] = result;
+    sendResponse(JSONValue(response).serialize());
+}
+
+void Server::sendSemanticTokensResponse(const JSONValue& id, const std::vector<int>& data) {
+    JSONValue::Array encoded;
+    encoded.reserve(data.size());
+    for (int value : data) {
+        encoded.push_back(value);
+    }
+
+    JSONValue::Object result;
+    result["data"] = encoded;
 
     JSONValue::Object response;
     response["jsonrpc"] = "2.0";
