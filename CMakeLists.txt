@@ -70,7 +70,6 @@ add_library(InstyFrontend STATIC
     ${INSTY_FRONTEND_SRC}/parser/statements/vars-fn.cpp
     ${INSTY_FRONTEND_SRC}/parser/statements/when.cpp
     ${INSTY_FRONTEND_SRC}/parser/statements/switch.cpp
-    ${INSTY_FRONTEND_SRC}/parser/statements/match.cpp
     ${INSTY_FRONTEND_SRC}/parser/statements/while.cpp
     ${INSTY_FRONTEND_SRC}/parser/statements/for.cpp
     ${INSTY_FRONTEND_SRC}/parser/statements/loop.cpp
@@ -121,3 +120,4 @@ target_link_libraries(InstyLSP PUBLIC InstyFrontend)
 add_executable(insty-lsp src/main.cpp)
 target_compile_options(insty-lsp PRIVATE -fexceptions)
 target_link_libraries(insty-lsp PRIVATE InstyLSP)
+

@@ -331,17 +331,6 @@ private:
                 visitBlock(node.consequent, true);
                 return;
             }
-            case AST::NodeType::SwitchStatement: {
-                const auto& node = static_cast<const AST::SwitchStatement&>(*expr);
-                visitExpr(node.subject);
-                for (const auto& arm : node.arms) {
-                    for (const auto& pattern : arm.patterns) {
-                        visitExpr(pattern);
-                    }
-                    visitBlock(arm.body, true);
-                }
-                return;
-            }
             case AST::NodeType::WhileLoop: {
                 const auto& node = static_cast<const AST::WhileLoop&>(*expr);
                 visitExpr(node.condition);
@@ -370,8 +359,8 @@ private:
                 popScope();
                 return;
             }
-            case AST::NodeType::MatchStatement: {
-                const auto& node = static_cast<const AST::MatchStatement&>(*expr);
+            case AST::NodeType::SwitchStatement: {
+                const auto& node = static_cast<const AST::SwitchStatement&>(*expr);
                 visitExpr(node.subject);
                 // Bindings appear in each arm's pattern before its body. Scan the
                 // token stream forward per arm to locate them (arms carry no range).
@@ -390,7 +379,7 @@ private:
                                                            0, &foundIndex);
                         if (decl) {
                             declareSymbol(binding, "", *decl, locationOffset(*decl),
-                                          binding + " (match binding)", true, false, false);
+                                          binding + " (switch binding)", true, false, false);
                         }
                     }
                     visitBlock(arm.body, false);
@@ -755,3 +744,4 @@ std::optional<std::reference_wrapper<DocumentState>> Server::ensureModuleLoaded(
 }
 
 } // namespace LSP
+

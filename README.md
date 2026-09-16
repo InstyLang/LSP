@@ -15,7 +15,7 @@ rename, and semantic tokens.
 - Semantic tokens: parser-accurate highlighting that distinguishes functions,
   methods, parameters, variables, properties, types, classes, enums, enum
   variants (sum-type payloads), type parameters, keywords, numbers, strings, and
-  `@builtin` macros — including inside `for`-loops and `match` arms
+  `@builtin` macros — including inside `for`-loops and `switch` arms
 - Both stdio and TCP (`--socket <port>`) transports
 
 ## Dependency on the compiler
@@ -47,3 +47,4 @@ The VS Code client lives in the
 [extension](https://github.com/InstyLang/extension) repo. It looks for
 `insty-lsp` on `PATH` (configurable via `insty.lspPath`) and supports both
 stdio and TCP transports.
+

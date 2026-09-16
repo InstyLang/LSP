@@ -375,7 +375,7 @@ std::vector<CompletionItem> Server::collectCompletionItems(const DocumentState& 
     const std::vector<std::string> keywords = {
         "module", "import", "as", "fun", "extern", "export", "struct", "class",
         "enum", "constructor", "destructor", "operator", "const", "let", "if",
-        "else", "while", "for", "in", "loop", "when", "switch", "match", "return",
+        "else", "while", "for", "in", "loop", "when", "switch", "return",
         "break", "skip", "new", "delete", "cast", "unsafe", "volatile", "section",
         "this", "true", "false"
     };
@@ -702,3 +702,4 @@ std::optional<Location> Server::symbolLocationFromDoc(const DocumentState& doc, 
 }
 
 } // namespace LSP
+
