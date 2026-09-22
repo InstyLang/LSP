@@ -374,7 +374,7 @@ std::vector<CompletionItem> Server::collectCompletionItems(const DocumentState& 
     // the `in` contextual keyword used in for-in headers).
     const std::vector<std::string> keywords = {
         "module", "import", "as", "fun", "extern", "export", "struct", "class",
-        "enum", "constructor", "destructor", "operator", "const", "let", "if",
+        "enum", "type", "constructor", "destructor", "operator", "const", "let", "if",
         "else", "while", "for", "in", "loop", "when", "switch", "return",
         "break", "skip", "new", "delete", "cast", "unsafe", "volatile", "section",
         "this", "true", "false"
@@ -385,7 +385,8 @@ std::vector<CompletionItem> Server::collectCompletionItems(const DocumentState& 
 
     const std::vector<std::string> types = {
         "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64",
-        "u128", "f16", "f32", "f64", "f128", "bool", "text", "void"
+        "u128", "f16", "f32", "f64", "f128", "bool", "text", "void",
+        "object", "any", "func"
     };
     for (const auto& type : types) {
         detail::addUniqueCompletion(items, seen, type, 25, "type", type);
@@ -396,7 +397,8 @@ std::vector<CompletionItem> Server::collectCompletionItems(const DocumentState& 
         "@syscall", "@strlen", "@sizeof", "@alignof", "@malloc", "@free",
         "@realloc", "@memset", "@memcpy", "@panic", "@print", "@println",
         "@readFile", "@system", "@getCurrentOS", "@typeof", "@offsetof",
-        "@bitcast", "@inttoptr", "@ptrtoint", "@utf16", "@hostname",
+        "@bitcast", "@inttoptr", "@ptrtoint", "@utf16", "@hash",
+        "@embedFile", "@embedBytes", "@targetIs", "@hostname",
         "@processorCount", "@totalMemory"
     };
     for (const auto& builtin : builtins) {

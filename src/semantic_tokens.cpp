@@ -123,6 +123,11 @@ std::vector<int> computeSemanticTokens(const DocumentState& doc) {
                     for (const auto& v : e.variants) enumVariantNames.insert(v.name);
                     break;
                 }
+                case AST::NodeType::TypeAliasDeclaration: {
+                    const auto& ta = static_cast<const AST::TypeAliasDeclaration&>(*stmt);
+                    addType(ta.name, ST_TYPE);
+                    break;
+                }
                 default:
                     break;
             }
@@ -172,6 +177,7 @@ std::vector<int> computeSemanticTokens(const DocumentState& doc) {
             case TokenType::KwStruct: declType = ST_STRUCT; break;
             case TokenType::KwClass:  declType = ST_CLASS; break;
             case TokenType::KwEnum:   declType = ST_ENUM; break;
+            case TokenType::KwType:   declType = ST_TYPE; break;
             case TokenType::KwFun:    declType = ST_FUNCTION; break;
             default: break;
         }

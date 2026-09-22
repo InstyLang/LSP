@@ -603,6 +603,7 @@ struct ModuleExports {
     std::vector<AST::ClassDeclaration*> classTemplates;
     std::vector<AST::FunctionDeclaration*> functionTemplates;
     std::vector<Sema::SumTypeInfo> sumTypes;
+    std::vector<std::pair<std::string, std::string>> typeAliases;
 };
 
 // Accumulate `src`'s exported symbols into `dst`.
@@ -614,6 +615,7 @@ void appendExports(ModuleExports& dst, const Sema::SemaResult& src) {
     for (auto* t : src.genericClassTemplates) if (t && t->isExported) dst.classTemplates.push_back(t);
     for (auto* t : src.genericFunctionTemplates) if (t && t->isExported) dst.functionTemplates.push_back(t);
     for (const auto& st : src.sumTypes) if (st.isExported) dst.sumTypes.push_back(st);
+    for (const auto& ta : src.exportedTypeAliases) dst.typeAliases.push_back(ta);
 }
 
 } // namespace
@@ -667,7 +669,7 @@ std::vector<Diagnostic> Server::collectSemanticDiagnostics(DocumentState& doc) {
             Sema::Analyzer analyzer(types, ErrorReporting::globalErrorReporter.get());
             result = analyzer.analyze(mod->ast, acc.functions, acc.structs, acc.classes,
                                       acc.enums, acc.classTemplates, acc.functionTemplates,
-                                      acc.sumTypes);
+                                      acc.sumTypes, {}, acc.typeAliases);
         } catch (...) {
         }
         ErrorReporting::cleanupErrorReporter();
@@ -681,7 +683,7 @@ std::vector<Diagnostic> Server::collectSemanticDiagnostics(DocumentState& doc) {
         Sema::Analyzer analyzer(types, ErrorReporting::globalErrorReporter.get());
         analyzer.analyze(doc.ast, acc.functions, acc.structs, acc.classes,
                          acc.enums, acc.classTemplates, acc.functionTemplates,
-                         acc.sumTypes);
+                         acc.sumTypes, {}, acc.typeAliases);
     } catch (...) {
     }
 
