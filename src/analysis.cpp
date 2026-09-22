@@ -438,6 +438,26 @@ private:
             case AST::NodeType::ReturnStatement:
                 visitExpr(static_cast<const AST::ReturnStatement&>(*expr).returnValue);
                 return;
+            case AST::NodeType::DestructureStatement: {
+                const auto& node = static_cast<const AST::DestructureStatement&>(*expr);
+                visitExpr(node.value);
+                const int startOff = nodeStartOffset(node);
+                const int endOff = nodeEndOffset(node);
+                for (const auto& b : node.bindings) {
+                    auto declLoc = findIdentifierLocation(b.name, startOff, endOff);
+                    if (declLoc) {
+                        declareSymbol(b.name, b.typeHint.empty() ? "variable" : b.typeHint,
+                                      *declLoc, locationOffset(*declLoc), b.name + ": " + b.typeHint,
+                                      false, false, false);
+                    }
+                }
+                return;
+            }
+            case AST::NodeType::TupleLiteral: {
+                const auto& node = static_cast<const AST::TupleLiteral&>(*expr);
+                for (const auto& elem : node.elements) visitExpr(elem);
+                return;
+            }
             case AST::NodeType::EqualityCheck: {
                 const auto& node = static_cast<const AST::EqualityCheckExpr&>(*expr);
                 visitExpr(node.left);

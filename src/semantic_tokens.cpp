@@ -39,7 +39,10 @@ enum : int {
     MOD_DECLARATION   = 1 << 0,
     MOD_DEFINITION    = 1 << 1,
     MOD_READONLY      = 1 << 2,
-    MOD_DEFAULTLIB    = 1 << 3
+    MOD_DEFAULTLIB    = 1 << 3,
+    MOD_MODIFICATION  = 1 << 4,
+    MOD_DOCUMENTATION = 1 << 5,
+    MOD_UNUSED        = 1 << 6
 };
 
 const std::vector<std::string>& semanticTokenTypes() {
@@ -53,7 +56,8 @@ const std::vector<std::string>& semanticTokenTypes() {
 
 const std::vector<std::string>& semanticTokenModifiers() {
     static const std::vector<std::string> kMods = {
-        "declaration", "definition", "readonly", "defaultLibrary"
+        "declaration", "definition", "readonly", "defaultLibrary",
+        "modification", "documentation", "unused"
     };
     return kMods;
 }
@@ -150,10 +154,25 @@ std::vector<int> computeSemanticTokens(const DocumentState& doc) {
         return ST_VARIABLE;
     };
 
+    // Track usage count per symbol to identify unused variables/parameters
+    std::vector<int> refCount(doc.semanticSymbols.size(), 0);
+    for (const auto& r : doc.semanticReferences) {
+        if (r.symbolId >= 0 && r.symbolId < static_cast<int>(doc.semanticSymbols.size())) {
+            refCount[r.symbolId]++;
+        }
+    }
+
     std::map<std::pair<int, int>, Class> posMap;  // (line0, col0) -> classification
-    for (const auto& s : doc.semanticSymbols) {
-        posMap[{s.declaration.line, s.declaration.column}] =
-            Class{kindOfSymbol(s), MOD_DECLARATION};
+    for (size_t idx = 0; idx < doc.semanticSymbols.size(); ++idx) {
+        const auto& s = doc.semanticSymbols[idx];
+        int mods = MOD_DECLARATION;
+        // If it's a variable or parameter with zero references (and not special like 'main' or leading underscore), mark as UNUSED
+        if (!s.name.empty() && s.name[0] != '_' && s.name != "main" && (s.isParameter || kindOfSymbol(s) == ST_VARIABLE)) {
+            if (refCount[idx] == 0) {
+                mods |= MOD_UNUSED;
+            }
+        }
+        posMap[{s.declaration.line, s.declaration.column}] = Class{kindOfSymbol(s), mods};
     }
     for (const auto& r : doc.semanticReferences) {
         if (r.symbolId >= 0 && r.symbolId < static_cast<int>(doc.semanticSymbols.size())) {
